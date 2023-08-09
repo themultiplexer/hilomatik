@@ -1,3 +1,4 @@
+
 #include <cstdio>
 #include <GL/glew.h>
 #include "platform_linux_xlib.h"
@@ -13,18 +14,29 @@
 #include <utility>
 #include <vector>
 
-#define NUM_SEGMENTS 400
+#define NUM_SEGMENTS 63
+#define NUM_POINTS (NUM_SEGMENTS+1)
 
 GLuint program;
 GLuint vao, vbo;
 float radius = 0.5f;
 RtAudio adc(RtAudio::Api::LINUX_PULSE);
-GLfloat circleVertices[NUM_SEGMENTS * 2 + 2];
+GLfloat circleVertices[NUM_POINTS * 2];
 
 kiss_fft_cfg cfg;
 
 float rawdata[1024];
 float freqs[1024];
+
+float red_rawdata[NUM_POINTS];
+float red_freqs[NUM_POINTS];
+
+enum VisMode{
+  LINES,
+  CIRCLE
+};
+
+VisMode mode = CIRCLE;
 
 int record(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
            double streamTime, RtAudioStreamStatus status, void *userData) {
@@ -44,6 +56,19 @@ int record(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
   kiss_fft(cfg, in, out);
   for (int i = 0; i < 1024; i++) {
     freqs[i] = sqrt(out[i].r * out[i].r + out[i].i * out[i].i);
+  }
+
+  int sample_group = 1024 / NUM_POINTS;
+  int fft_group = 400 / NUM_POINTS;
+  for(int i = 0; i < NUM_POINTS; i++) {
+    red_rawdata[i] = 0;
+    red_freqs[i] = 0;
+    for(int j = 0; j < sample_group; j++) {
+      red_rawdata[i] += rawdata[i * sample_group + j];
+    }
+    for(int j = 0; j < fft_group; j++) {
+      red_freqs[i] += freqs[i * fft_group + j + 40];
+    }
   }
 
   // Do something with the data in the "inputBuffer" buffer.
@@ -67,6 +92,7 @@ void getdevices() {
     // Print, for example, the name and maximum number of output channels for
     // each device
     std::cout << "device name = " << info.name << std::endl;
+    std::cout << "device id = " << ids[n] << std::endl;
     std::cout << ": maximum input channels = " << info.inputChannels << std::endl;
     std::cout << ": maximum output channels = " << info.outputChannels << std::endl;
   }
@@ -77,13 +103,13 @@ bool Initialize() {
 
   RtAudio::StreamParameters parameters;
   parameters.deviceId = adc.getDefaultInputDevice();
+  //parameters.deviceId = 132;
   parameters.nChannels = 1;
   parameters.firstChannel = 0;
   unsigned int sampleRate = 44100;
   unsigned int bufferFrames = 1024;
 
-  if (adc.openStream(NULL, &parameters, RTAUDIO_SINT16, sampleRate,
-                     &bufferFrames, &record)) {
+  if (adc.openStream(NULL, &parameters, RTAUDIO_FLOAT32, sampleRate, &bufferFrames, &record)) {
     std::cout << '\n' << adc.getErrorText() << '\n' << std::endl;
     exit(0); // problem with device settings
   }
@@ -161,23 +187,6 @@ bool Initialize() {
     return false;
   }
 
-  // vertex buffer
-  if (true) {
-    for (int i = 0; i <= NUM_SEGMENTS; i++) {
-      circleVertices[i * 2] = i * 0.005 - 0.9;
-      circleVertices[i * 2 + 1] = rawdata[i];
-    }
-  } else {
-    for (int i = 0; i <= NUM_SEGMENTS; i++) {
-      float theta = 2.0f * 3.1415926f * float(i) / float(NUM_SEGMENTS);
-      float x = radius * cosf(theta);
-      float y = radius * sinf(theta);
-
-      circleVertices[i * 2] = x;
-      circleVertices[i * 2 + 1] = y;
-    }
-  }
-
   glGenVertexArrays(1, &vao);
   glGenBuffers(1, &vbo);
 
@@ -194,24 +203,26 @@ bool Initialize() {
 
   glEnable(GL_PROGRAM_POINT_SIZE);
   glEnable(GL_POINT_SMOOTH);
-  glEnable(GL_BLEND);
+  //glEnable(GL_BLEND);
 
+  glLineWidth(5.0);
   return true;
 }
 
 void Render() {
-
-  if (false) {
+  if (mode == LINES) {
     for (int i = 0; i <= NUM_SEGMENTS; i++) {
-      circleVertices[i * 2] = i * 0.005 - 0.9;
-      float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-      circleVertices[i * 2 + 1] = r;
+      circleVertices[i * 2] = i * 0.0275 - 0.9;
+      //float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+      //circleVertices[i * 2 + 1] = red_rawdata[i] * 0.2;
+      circleVertices[i * 2 + 1] = red_freqs[i] * 0.05 - 0.5;
     }
-  } else {
+  } else if (mode == CIRCLE) {
     for (int i = 0; i <= NUM_SEGMENTS; i++) {
-      float theta = 2.0f * 3.1415926f * float(i) / float(NUM_SEGMENTS);
+      float theta = 2.0f * M_PI * float(i) / float(NUM_SEGMENTS) - M_PI;
 
-      float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX) + 0.5;
+      //float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX) + 0.5;
+      float r = red_freqs[i] * 0.05 + 0.5;
 
       float x = radius * r * cosf(theta);
       float y = radius * r * sinf(theta);
@@ -237,7 +248,12 @@ void Render() {
   glBindVertexArray(vao);
 
   // Draw the circle as a line loop
-  glDrawArrays(GL_LINE_LOOP, 0, NUM_SEGMENTS + 1);
+  if (mode == LINES) {
+    glDrawArrays(GL_LINE_STRIP, 0, NUM_SEGMENTS + 1);
+  } else if (mode == CIRCLE) {
+    glDrawArrays(GL_LINE_LOOP, 0, NUM_SEGMENTS + 1);
+  }
+  
   glDrawArrays(GL_POINTS, 0, NUM_SEGMENTS);
 
   // Unbind VAO and shader

@@ -1,7 +1,7 @@
 MAIN = triangle
 CC = g++
 CFLAGS = -DLINUX -std=c++0x -Wall -Wextra -Werror -g
-LFLAGS = -lX11 -lGL
+LFLAGS = -lX11 -lGL -lGLEW
 
 SRCS = main.cpp
 OBJS = $(SRCS:.cpp=.o)

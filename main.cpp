@@ -1,5 +1,6 @@
 #include <cstdio>
 
+#include <GL/glew.h>
 #include "platform_linux_xlib.h"
 
 #include <set>
@@ -9,31 +10,19 @@
 #include <fstream>
 #include <sstream>
 
-PFNGLCREATEPROGRAMPROC glCreateProgram = nullptr;
-PFNGLCREATESHADERPROC glCreateShader = nullptr;
-PFNGLSHADERSOURCEPROC glShaderSource = nullptr;
-PFNGLCOMPILESHADERPROC glCompileShader = nullptr;
-PFNGLGETSHADERIVPROC glGetShaderiv = nullptr;
-PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog = nullptr;
-PFNGLATTACHSHADERPROC glAttachShader = nullptr;
-PFNGLLINKPROGRAMPROC glLinkProgram = nullptr;
-PFNGLGETPROGRAMIVPROC glGetProgramiv = nullptr;
-PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog = nullptr;
-PFNGLUSEPROGRAMPROC glUseProgram = nullptr;
-PFNGLGENBUFFERSPROC glGenBuffers = nullptr;
-PFNGLBINDBUFFERPROC glBindBuffer = nullptr;
-PFNGLBUFFERDATAPROC glBufferData = nullptr;
-PFNGLGETATTRIBLOCATIONPROC glGetAttribLocation = nullptr;
-PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray = nullptr;
-PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer = nullptr;
+GLuint program;
+GLuint vb;
+
+float vertices[] = { 0.0f, 1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f, -1.0f, 0.0f };
+//float vertices[] = {-1.0f, 1.0f, -1.0f, -1.0f,1.0f, -1.0f };
 
 bool Initialize()
 {
     // shaders
-    std::ifstream v("vertex.glsl");
+    std::ifstream v("../vertex.glsl");
     std::stringstream vertex;
     vertex << v.rdbuf();
-    std::ifstream f("fragment.glsl");
+    std::ifstream f("../fragment.glsl");
     std::stringstream fragment;
     fragment << f.rdbuf();
 
@@ -47,8 +36,8 @@ bool Initialize()
             fragment.str()
         },
     };
-
-    GLuint program = glCreateProgram();
+    glewInit();
+    program = glCreateProgram();
 
     for (const auto &s: shaders) {
         GLenum type = s.first;
@@ -103,35 +92,70 @@ bool Initialize()
 
     // vertex buffer
 
-    float vertices[] = {
-        -1.0f, 1.0f,
-        -1.0f, -1.0f,
-        1.0f, -1.0f
-    };
+    
 
-    GLuint vb;
+    
     glGenBuffers(1, &vb);
     glBindBuffer(GL_ARRAY_BUFFER, vb);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
     // initial state
     glUseProgram(program);
+    
+    GLfloat uResolution[2] = { 512, 512 };
+    glUniform4fv(glGetUniformLocation(program, "uResolution"), 2, &uResolution[0]);
 
+    GLfloat aRadius = 0.1;
+    glUniform4fv(glGetUniformLocation(program, "aRadius"), 1, &aRadius);
+
+    GLfloat aColor[4] = { 1, 1, 0, 1 };
+    glUniform4fv(glGetUniformLocation(program, "aColor"), 4, &aColor[0]);
+    
     GLint position = glGetAttribLocation(program, "position");
     glEnableVertexAttribArray(position);
-
+    
     glBindBuffer(GL_ARRAY_BUFFER, vb);
     glVertexAttribPointer(position, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    
+    glEnable(GL_PROGRAM_POINT_SIZE);
+    glEnable(GL_POINT_SMOOTH);
+	glEnable(GL_BLEND);
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
+    
 
     return true;
 }
 
 void Render()
 {
-    glClear(GL_COLOR_BUFFER_BIT);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glEnable( GL_DEPTH_TEST );
+    glClearColor( 0.0, 0.0, 0.0, 1.0 );
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+    glUseProgram(program);
+
+    GLfloat uResolution[2] = { 512, 512 };
+    glUniform4fv(glGetUniformLocation(program, "uResolution"), 2, &uResolution[0]);
+
+    GLfloat aRadius = 50.0;
+    glUniform4fv(glGetUniformLocation(program, "aRadius"), 1, &aRadius);
+
+    GLfloat aColor[4] = { 1, 1, 0, 1 };
+    glUniform4fv(glGetUniformLocation(program, "aColor"), 4, &aColor[0]);
+
+	glBindBuffer(GL_ARRAY_BUFFER, vb);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    GLint position = glGetAttribLocation(program, "position");
+    glEnableVertexAttribArray(position);
+    
+    glBindBuffer(GL_ARRAY_BUFFER, vb);
+    glVertexAttribPointer(position, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+    glDrawArrays(GL_POINTS, 0, 5);
+    //glDrawArrays(GL_TRIANGLES, 0, 5);
+	glUseProgram(0);
 }
 
 int main()
@@ -148,26 +172,6 @@ int main()
     printf("GL_VENDOR: %s\n", glGetString(GL_VENDOR));
     printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
     printf("GL_RENDERER: %s\n", glGetString(GL_RENDERER));
-
-    // initialize OpenGL function pointers
-
-    glCreateProgram = (PFNGLCREATEPROGRAMPROC)platform::get_gl_function_pointer("glCreateProgram");
-    glCreateShader = (PFNGLCREATESHADERPROC)platform::get_gl_function_pointer("glCreateShader");
-    glShaderSource = (PFNGLSHADERSOURCEPROC)platform::get_gl_function_pointer("glShaderSource");
-    glCompileShader = (PFNGLCOMPILESHADERPROC)platform::get_gl_function_pointer("glCompileShader");
-    glGetShaderiv = (PFNGLGETSHADERIVPROC)platform::get_gl_function_pointer("glGetShaderiv");
-    glGetShaderInfoLog = (PFNGLGETSHADERINFOLOGPROC)platform::get_gl_function_pointer("glGetShaderInfoLog");
-    glAttachShader = (PFNGLATTACHSHADERPROC)platform::get_gl_function_pointer("glAttachShader");
-    glLinkProgram = (PFNGLLINKPROGRAMPROC)platform::get_gl_function_pointer("glLinkProgram");
-    glGetProgramiv = (PFNGLGETPROGRAMIVPROC)platform::get_gl_function_pointer("glGetProgramiv");
-    glGetProgramInfoLog = (PFNGLGETPROGRAMINFOLOGPROC)platform::get_gl_function_pointer("glGetProgramInfoLog");
-    glUseProgram = (PFNGLUSEPROGRAMPROC)platform::get_gl_function_pointer("glUseProgram");
-    glGenBuffers = (PFNGLGENBUFFERSPROC)platform::get_gl_function_pointer("glGenBuffers");
-    glBindBuffer = (PFNGLBINDBUFFERPROC)platform::get_gl_function_pointer("glBindBuffer");
-    glBufferData = (PFNGLBUFFERDATAPROC)platform::get_gl_function_pointer("glBufferData");
-    glGetAttribLocation = (PFNGLGETATTRIBLOCATIONPROC)platform::get_gl_function_pointer("glGetAttribLocation");
-    glEnableVertexAttribArray = (PFNGLENABLEVERTEXATTRIBARRAYPROC)platform::get_gl_function_pointer("glEnableVertexAttribArray");
-    glVertexAttribPointer = (PFNGLVERTEXATTRIBPOINTERPROC)platform::get_gl_function_pointer("glVertexAttribPointer");
 
     if (!Initialize()) {
         printf("Scene initialization failed.\n");

@@ -1,8 +1,10 @@
 
 #include <cstdio>
 #include <GL/glew.h>
-#include "platform_linux_xlib.h"
-
+#include <GLFW/glfw3.h>
+#include <GL/gl.h>
+#include <GL/glx.h>
+#include <GL/glext.h>
 
 #include <fstream>
 #include <kissfft/kiss_fft.h>
@@ -30,6 +32,10 @@ float freqs[1024];
 
 float red_rawdata[NUM_POINTS];
 float red_freqs[NUM_POINTS];
+float last_freqs[NUM_POINTS];
+
+double lastTime = glfwGetTime();
+int nbFrames = 0;
 
 enum VisMode{
   LINES,
@@ -44,7 +50,7 @@ int record(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
     std::cout << "Stream overflow detected!" << std::endl;
     return 0;
     }
-
+  
   //printf("%d \n", nBufferFrames);
   kiss_fft_cpx in[1024] = {};
   for (unsigned int i = 0; i < nBufferFrames; i++) {
@@ -69,8 +75,13 @@ int record(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
     for(int j = 0; j < fft_group; j++) {
       red_freqs[i] += freqs[i * fft_group + j + 40];
     }
+    red_freqs[i] += last_freqs[i];
+    red_freqs[i] /= 2.0;
   }
 
+  for(int i = 0; i < NUM_POINTS; i++) {
+    last_freqs[i] = red_freqs[i];
+  }
   // Do something with the data in the "inputBuffer" buffer.
   return 0;
 }
@@ -98,6 +109,25 @@ void getdevices() {
   }
 }
 
+static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS){
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+    } else if (key == GLFW_KEY_L) {
+      mode = VisMode::LINES;
+    } else if (key == GLFW_KEY_C) {
+      mode = VisMode::CIRCLE;
+    }
+}
+
+static void resize(GLFWwindow* window, int width, int height){
+	  glViewport(0,0,width,height);
+    glUseProgram(program);
+
+    GLfloat uResolution[2] = { (float)width, (float)height };
+    glUniform2fv(glGetUniformLocation(program, "uResolution"), 1, uResolution);
+}
+
 bool Initialize() {
   getdevices();
 
@@ -106,7 +136,7 @@ bool Initialize() {
   //parameters.deviceId = 132;
   parameters.nChannels = 1;
   parameters.firstChannel = 0;
-  unsigned int sampleRate = 44100;
+  unsigned int sampleRate = 48000;
   unsigned int bufferFrames = 1024;
 
   if (adc.openStream(NULL, &parameters, RTAUDIO_FLOAT32, sampleRate, &bufferFrames, &record)) {
@@ -133,8 +163,9 @@ bool Initialize() {
       {GL_VERTEX_SHADER, vertex.str()},
       {GL_FRAGMENT_SHADER, fragment.str()},
   };
-  glewInit();
+  printf("Creating program \n");
   program = glCreateProgram();
+  printf("Created program \n");
 
   for (const auto &s : shaders) {
     GLenum type = s.first;
@@ -144,7 +175,6 @@ bool Initialize() {
 
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &src, nullptr);
-
     glCompileShader(shader);
 
     GLint compiled = 0;
@@ -192,7 +222,7 @@ bool Initialize() {
 
   glBindVertexArray(vao);
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(circleVertices), circleVertices,GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(circleVertices), circleVertices, GL_STATIC_DRAW);
   glUseProgram(program);
 
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
@@ -203,19 +233,31 @@ bool Initialize() {
 
   glEnable(GL_PROGRAM_POINT_SIZE);
   glEnable(GL_POINT_SMOOTH);
-  //glEnable(GL_BLEND);
+  glEnable(GL_BLEND);
 
   glLineWidth(5.0);
+  printf("Init finished \n");
   return true;
 }
 
 void Render() {
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  double currentTime = glfwGetTime();
+  nbFrames++;
+  if ( currentTime - lastTime >= 1.0 ){ // If last prinf() was more than 1 sec ago
+      // printf and reset timer
+      printf("%f ms/frame\n", 1000.0/double(nbFrames));
+      nbFrames = 0;
+      lastTime += 1.0;
+  }
+
   if (mode == LINES) {
     for (int i = 0; i <= NUM_SEGMENTS; i++) {
       circleVertices[i * 2] = i * 0.0275 - 0.9;
       //float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
       //circleVertices[i * 2 + 1] = red_rawdata[i] * 0.2;
-      circleVertices[i * 2 + 1] = red_freqs[i] * 0.05 - 0.5;
+      circleVertices[i * 2 + 1] = red_freqs[i] * 0.05 - 0.9;
     }
   } else if (mode == CIRCLE) {
     for (int i = 0; i <= NUM_SEGMENTS; i++) {
@@ -233,16 +275,11 @@ void Render() {
   }
 
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(circleVertices), circleVertices,GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(circleVertices), circleVertices, GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-  glClear(GL_COLOR_BUFFER_BIT);
 
   // Use the shader program
   glUseProgram(program);
-
-  // Set the circle color uniform
-  glUniform3f(glGetUniformLocation(program, "circleColor"), 1.0f, 0.0f, 0.0f);
 
   // Bind vertex array object (VAO)
   glBindVertexArray(vao);
@@ -262,15 +299,22 @@ void Render() {
 }
 
 int main() {
-  const unsigned int client_width = 2048;
-  const unsigned int client_height = 2048;
+  const unsigned int client_width = 3840;
+  const unsigned int client_height = 2160;
 
-  platform_window_t *window =
-      platform::create_window("Triangle", client_width, client_height);
+  if (!glfwInit())
+      exit(EXIT_FAILURE);
+
+
+  GLFWwindow* window = glfwCreateWindow(client_width, client_height, "My Title", NULL, NULL);
   if (!window) {
     printf("Failed to create window.\n");
     return 1;
   }
+  glfwMakeContextCurrent(window);
+  glfwSetKeyCallback(window, key_callback);
+  glfwSetFramebufferSizeCallback(window, resize);
+  glewInit();
 
   printf("GL_VENDOR: %s\n", glGetString(GL_VENDOR));
   printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
@@ -281,23 +325,17 @@ int main() {
     return 1;
   }
 
-  while (true) {
-    bool quit = platform::handle_events(window);
-    if (quit) {
-      break;
-    }
-
+  while (!glfwWindowShouldClose(window)) {
     Render();
-
-    platform::swap(window);
+    glfwSwapBuffers(window);
+    glfwPollEvents();
   }
 
-  if (adc.isStreamRunning())
+  if (adc.isStreamRunning()){
     adc.stopStream();
+  }
 
-  platform::destroy_window(window);
-
-  delete window;
+  glfwDestroyWindow(window);
 
   return 0;
 }

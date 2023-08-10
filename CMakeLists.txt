@@ -10,6 +10,7 @@ find_package(X11 REQUIRED)
 set(OpenGL_GL_PREFERENCE LEGACY)
 find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
+find_package(glfw3 REQUIRED)
 find_package(kissfft REQUIRED)
 find_package(RtAudio REQUIRED)
 
@@ -23,4 +24,4 @@ add_executable(triangle main.cpp)
 #include_directories(${OPENGL_INCLUDE_DIRS})
 #include_directories(${GLEW_INCLUDE_DIRS})
 
-target_link_libraries(triangle PRIVATE ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${GLEW_LIBRARIES} RtAudio::rtaudio "/usr/lib/x86_64-linux-gnu/libkissfft-float.so.131.1.0")
+target_link_libraries(triangle PRIVATE ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${GLEW_LIBRARIES} glfw RtAudio::rtaudio "/usr/lib/x86_64-linux-gnu/libkissfft-float.so.131.1.0")

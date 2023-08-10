@@ -1,7 +1,5 @@
 #version 330 core
 
-uniform vec3 circleColor;
-
 void main() {
-    gl_FragColor = vec4(circleColor, 1.0);
+    gl_FragColor = vec4(gl_FragCoord.x, gl_FragCoord.y, 0.0, 1.0);
 }

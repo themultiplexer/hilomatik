@@ -5,6 +5,9 @@
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glext.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <fstream>
 #include <kissfft/kiss_fft.h>
@@ -17,13 +20,15 @@
 #include <vector>
 
 #define NUM_SEGMENTS 63
+#define VERT_LENGTH 4 //x,y,z,volume
 #define NUM_POINTS (NUM_SEGMENTS+1)
+#define SPHERE_LAYERS 8
 
 GLuint program;
 GLuint vao, vbo;
-float radius = 0.5f;
+float radius = 1.0f;
 RtAudio adc(RtAudio::Api::LINUX_PULSE);
-GLfloat circleVertices[NUM_POINTS * 2];
+GLfloat circleVertices[NUM_POINTS * VERT_LENGTH * SPHERE_LAYERS];
 
 kiss_fft_cfg cfg;
 
@@ -39,7 +44,9 @@ int nbFrames = 0;
 
 enum VisMode{
   LINES,
-  CIRCLE
+  CIRCLE,
+  SPHERE,
+  SPHERE_SPIRAL
 };
 
 VisMode mode = CIRCLE;
@@ -109,6 +116,26 @@ void getdevices() {
   }
 }
 
+static void set_camera(float cam_x, float cam_y, float cam_z, float target_z) {
+    glUseProgram(program);
+    glm::mat4 trans = glm::mat4(1.0f);
+    trans = glm::rotate(trans, glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    GLint uniTrans = glGetUniformLocation(program, "model");
+    glUniformMatrix4fv(uniTrans, 1, GL_FALSE, glm::value_ptr(trans));
+    
+    glm::mat4 view = glm::lookAt(
+        glm::vec3(cam_x, cam_y, cam_z),
+        glm::vec3(0.0f, 0.0f, target_z),
+        glm::vec3(0.0f, 0.0f, 1.0f)
+    );
+    GLint uniView = glGetUniformLocation(program, "view");
+    glUniformMatrix4fv(uniView, 1, GL_FALSE, glm::value_ptr(view));
+
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 1.0f, 10.0f);
+    GLint uniProj = glGetUniformLocation(program, "proj");
+    glUniformMatrix4fv(uniProj, 1, GL_FALSE, glm::value_ptr(proj));
+}
+
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS){
@@ -117,6 +144,12 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
       mode = VisMode::LINES;
     } else if (key == GLFW_KEY_C) {
       mode = VisMode::CIRCLE;
+    } else if (key == GLFW_KEY_S) {
+      mode = VisMode::SPHERE;
+    } else if (key == GLFW_KEY_X) {
+      mode = VisMode::SPHERE_SPIRAL;
+    } else if (key == GLFW_KEY_F) {
+      set_camera(0.0f, -2.5f, 2.5f, 1.0f);
     }
 }
 
@@ -217,6 +250,8 @@ bool Initialize() {
     return false;
   }
 
+  set_camera(0.0f, -0.1f, 5.0f, 0.0f);
+
   glGenVertexArrays(1, &vao);
   glGenBuffers(1, &vbo);
 
@@ -225,7 +260,7 @@ bool Initialize() {
   glBufferData(GL_ARRAY_BUFFER, sizeof(circleVertices), circleVertices, GL_STATIC_DRAW);
   glUseProgram(program);
 
-  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
+  glVertexAttribPointer(0, VERT_LENGTH, GL_FLOAT, GL_FALSE, VERT_LENGTH * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
 
   glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -235,7 +270,7 @@ bool Initialize() {
   glEnable(GL_POINT_SMOOTH);
   glEnable(GL_BLEND);
 
-  glLineWidth(5.0);
+  glLineWidth(10.0);
   printf("Init finished \n");
   return true;
 }
@@ -254,23 +289,54 @@ void Render() {
 
   if (mode == LINES) {
     for (int i = 0; i <= NUM_SEGMENTS; i++) {
-      circleVertices[i * 2] = i * 0.0275 - 0.9;
-      //float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-      //circleVertices[i * 2 + 1] = red_rawdata[i] * 0.2;
-      circleVertices[i * 2 + 1] = red_freqs[i] * 0.05 - 0.9;
+      circleVertices[i * VERT_LENGTH] = i * 0.0275 - 0.9;
+      circleVertices[i * VERT_LENGTH + 1] = red_freqs[i] * 0.1 - 0.9;
+      circleVertices[i * VERT_LENGTH + 2] = 0.0; 
+      circleVertices[i * VERT_LENGTH + 3] = red_freqs[i] * 0.1;
     }
   } else if (mode == CIRCLE) {
     for (int i = 0; i <= NUM_SEGMENTS; i++) {
       float theta = 2.0f * M_PI * float(i) / float(NUM_SEGMENTS) - M_PI;
-
-      //float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX) + 0.5;
-      float r = red_freqs[i] * 0.05 + 0.5;
+      float r = red_freqs[i] * 0.1 + 0.5;
 
       float x = radius * r * cosf(theta);
       float y = radius * r * sinf(theta);
 
-      circleVertices[i * 2] = x;
-      circleVertices[i * 2 + 1] = y;
+      circleVertices[i * VERT_LENGTH] = x;
+      circleVertices[i * VERT_LENGTH + 1] = y;
+      circleVertices[i * VERT_LENGTH + 2] = 0.0;
+      circleVertices[i * VERT_LENGTH + 3] = red_freqs[i] * 0.1;
+    }
+  } else if (mode == SPHERE) {
+    for (int c = 0; c < SPHERE_LAYERS; c++) {
+      for (int i = 0; i < NUM_POINTS; i++) {
+        float theta = 2.0f * M_PI * float(i) / float(NUM_POINTS) - M_PI;
+
+        float r = red_freqs[i] * 0.1 + 0.5;
+        float layer = sin(((float)c / (float)SPHERE_LAYERS) * M_PI);
+        float x = radius * layer * r * cosf(theta);
+        float y = radius * layer * r * sinf(theta);
+
+        circleVertices[c * NUM_POINTS * VERT_LENGTH + i * VERT_LENGTH] = x;
+        circleVertices[c * NUM_POINTS * VERT_LENGTH + i * VERT_LENGTH + 1] = y;
+        circleVertices[c * NUM_POINTS * VERT_LENGTH + i * VERT_LENGTH + 2] = c * 0.2;
+        circleVertices[c * NUM_POINTS * VERT_LENGTH + i * VERT_LENGTH + 3] = red_freqs[i] * 0.1;
+      }
+    }
+  } else if (mode == SPHERE_SPIRAL) {
+    for (int i = 0; i < NUM_POINTS * SPHERE_LAYERS; i++) {
+      float theta = 2.0f * M_PI * float(i) / float(NUM_POINTS) - M_PI;
+
+      float r = freqs[i] * 0.1 + 0.5;
+      float percent = ((float)i / (float)(NUM_POINTS * SPHERE_LAYERS));
+      float layer = sin(percent * M_PI);
+      float x = radius * layer * r * cosf(theta);
+      float y = radius * layer * r * sinf(theta);
+
+      circleVertices[i * VERT_LENGTH] = x;
+      circleVertices[i * VERT_LENGTH + 1] = y;
+      circleVertices[i * VERT_LENGTH + 2] = percent * 2.0;
+      circleVertices[i * VERT_LENGTH + 3] = freqs[i] * 0.1;
     }
   }
 
@@ -287,11 +353,19 @@ void Render() {
   // Draw the circle as a line loop
   if (mode == LINES) {
     glDrawArrays(GL_LINE_STRIP, 0, NUM_SEGMENTS + 1);
+    glDrawArrays(GL_POINTS, 0, NUM_POINTS);
   } else if (mode == CIRCLE) {
     glDrawArrays(GL_LINE_LOOP, 0, NUM_SEGMENTS + 1);
+    glDrawArrays(GL_POINTS, 0, NUM_POINTS);
+  } else if (mode == SPHERE) {
+    glDrawArrays(GL_LINE_STRIP, 0, SPHERE_LAYERS * NUM_POINTS);
+    glDrawArrays(GL_POINTS, 0, SPHERE_LAYERS * NUM_POINTS);
+  } else {
+    glDrawArrays(GL_LINE_STRIP, 0, SPHERE_LAYERS * NUM_POINTS);
+    //glDrawArrays(GL_POINTS, 0, SPHERE_LAYERS * NUM_POINTS);
   }
   
-  glDrawArrays(GL_POINTS, 0, NUM_SEGMENTS);
+  
 
   // Unbind VAO and shader
   glBindVertexArray(0);

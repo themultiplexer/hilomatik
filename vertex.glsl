@@ -1,15 +1,20 @@
 #version 330 core
 
-in vec2 inPosition;
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 proj;
+
+in vec4 inPosition;
 uniform vec2 uResolution; // = (window-width, window-height)
+out float volume;
 
 void main() {
-    vec2  uv = inPosition;
+    vec2  pos = inPosition.xy;
     float AR = uResolution.y / uResolution.x;
-    
-    uv.x *= AR;
+    pos.x *= AR;
 
-    gl_Position = vec4(uv, 0.0, 1.0);
-    gl_FrontColor = vec4(1.0,1.0,1.0, 1.0);
-    gl_PointSize = inPosition.y * 50.0;
+    volume = inPosition.w;
+
+    gl_Position = proj * view * model * vec4(inPosition.xyz, 1.0);
+    gl_PointSize = volume * 5.0 + 5.0;
 }

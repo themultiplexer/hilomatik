@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(triangle)
+project(hilomatik)
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,10 +18,10 @@ get_property(importTargetsAfter DIRECTORY "${CMAKE_SOURCE_DIR}" PROPERTY IMPORTE
 list(REMOVE_ITEM importTargetsAfter ${importTargets})
 message("${importTargetsAfter}")
 
-add_executable(triangle main.cpp)
+add_executable(hilomatik main.cpp)
 
 #include_directories(${X11_INCLUDE_DIR})
 #include_directories(${OPENGL_INCLUDE_DIRS})
 #include_directories(${GLEW_INCLUDE_DIRS})
 
-target_link_libraries(triangle PRIVATE ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${GLEW_LIBRARIES} glfw RtAudio::rtaudio "/usr/lib/x86_64-linux-gnu/libkissfft-float.so.131.1.0")
+target_link_libraries(hilomatik PRIVATE ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${GLEW_LIBRARIES} glfw RtAudio::rtaudio "/usr/lib/x86_64-linux-gnu/libkissfft-float.so.131.1.0")

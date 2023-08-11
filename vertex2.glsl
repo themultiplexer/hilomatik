@@ -6,8 +6,10 @@ uniform mat4 proj;
 
 layout (location = 0) in vec4 inPosition;
 layout (location = 1) in vec3 v_bary;
+
 uniform vec2 uResolution; // = (window-width, window-height)
 out float volume;
+
 out vec3 v_bc;
 
 void main() {

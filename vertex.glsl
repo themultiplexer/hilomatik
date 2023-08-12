@@ -6,13 +6,13 @@ uniform mat4 proj;
 
 layout (location = 0) in vec4 inPosition;
 layout (location = 1) in vec3 v_bary;
-uniform vec2 uResolution; // = (window-width, window-height)
+uniform vec2 iResolution; // = (window-width, window-height)
 out float volume;
 out vec3 v_bc;
 
 void main() {
     vec2  pos = inPosition.xy;
-    float AR = uResolution.y / uResolution.x;
+    float AR = iResolution.y / iResolution.x;
     //pos.x *= AR;
 
     volume = inPosition.w;

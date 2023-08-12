@@ -18,21 +18,27 @@
 #include <string>
 #include <utility>
 #include <vector>
-
+#include <time.h>
+#include <chrono>
 #define VERT_LENGTH 4 //x,y,z,volume
 
 #define FRAMES 512
-#define NUM_POINTS 64
-#define NUM_TRIANGLES 3 * 8
+#define NUM_POINTS 32
+#define NUM_TRIANGLES 3 * 4 * 8
+
+
+using namespace std::chrono;
+using namespace std;
 
 GLFWwindow* window;
-GLuint program, program2;
-GLuint vao, vao2, vbo, vbo2;
-float radius = 0.75f;
-float radius2 = 1.0f;
+GLuint program, program2, program3;
+GLuint vao, vao2, vao3, vbo, vbo2, vbo3;
+float radius = 1.0f;
+float radius2 = 1.25f;
 RtAudio adc(RtAudio::Api::LINUX_PULSE);
 GLfloat circleVertices[NUM_POINTS * VERT_LENGTH * 3];
 GLfloat triangleVertices[NUM_TRIANGLES * VERT_LENGTH * 3 + NUM_TRIANGLES * 3];
+GLfloat quadVertices[6 * 3];
 
 kiss_fft_cfg cfg;
 
@@ -47,6 +53,13 @@ float last_freqs[NUM_POINTS];
 
 double lastTime = glfwGetTime();
 int nbFrames = 0;
+
+struct Point {
+    float x;
+    float y;
+};
+
+milliseconds start;
 
 void Render();
 
@@ -127,12 +140,13 @@ void getdevices() {
 }
 
 static void set_camera(float cam_x, float cam_y, float cam_z, float target_z) {
-    GLuint programs[2] = {program, program2};
-    for (int i = 0; i < 2; i++) {
+    GLuint programs[3] = {program, program2, program3};
+    for (int i = 0; i < 3; i++) {
         glUseProgram(programs[i]);
+
         glm::mat4 trans = glm::mat4(1.0f);
         trans = glm::rotate(trans, glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        GLint uniTrans = glGetUniformLocation(program, "model");
+        GLint uniTrans = glGetUniformLocation(programs[i], "model");
         glUniformMatrix4fv(uniTrans, 1, GL_FALSE, glm::value_ptr(trans));
         
         glm::mat4 view = glm::lookAt(
@@ -140,11 +154,11 @@ static void set_camera(float cam_x, float cam_y, float cam_z, float target_z) {
             glm::vec3(0.0f, 0.0f, target_z),
             glm::vec3(0.0f, 0.0f, 1.0f)
         );
-        GLint uniView = glGetUniformLocation(program, "view");
+        GLint uniView = glGetUniformLocation(programs[i], "view");
         glUniformMatrix4fv(uniView, 1, GL_FALSE, glm::value_ptr(view));
 
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), 3840.0f / 2160.0f, 1.0f, 10.0f);
-        GLint uniProj = glGetUniformLocation(program, "proj");
+        GLint uniProj = glGetUniformLocation(programs[i], "proj");
         glUniformMatrix4fv(uniProj, 1, GL_FALSE, glm::value_ptr(proj));
     }
 }
@@ -164,21 +178,24 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     } else if (key == GLFW_KEY_X) {
       mode = VisMode::SPHERE_SPIRAL;
     } else if (key == GLFW_KEY_F) {
-      set_camera(0.0f, -2.5f, 2.5f, 0.75f);
+      set_camera(0.0f, -2.5f, 2.5f, 0.0f);
     }
 }
 
 static void resize(GLFWwindow* window, int width, int height){
 	  glViewport(0,0,width,height);
-    glUseProgram(program);
-    glUseProgram(program2);
+    
+    GLuint programs[3] = {program, program2, program3};
+    for (int i = 0; i < 3; i++) {
+        glUseProgram(programs[i]);
 
-    GLfloat uResolution[2] = { (float)width, (float)height };
-    glUniform2fv(glGetUniformLocation(program, "uResolution"), 1, uResolution);
+      GLfloat uResolution[2] = { (float)width, (float)height };
+      glUniform2fv(glGetUniformLocation(programs[i], "iResolution"), 1, uResolution);
 
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 1.0f, 10.0f);
-    GLint uniProj = glGetUniformLocation(program, "proj");
-    glUniformMatrix4fv(uniProj, 1, GL_FALSE, glm::value_ptr(proj));
+      glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 1.0f, 10.0f);
+      GLint uniProj = glGetUniformLocation(programs[i], "proj");
+      glUniformMatrix4fv(uniProj, 1, GL_FALSE, glm::value_ptr(proj));
+    }
 }
 
     // Get the depth buffer value at this pixel.   
@@ -237,9 +254,16 @@ bool loadShaders(GLuint *program, std::vector<std::pair<GLenum, std::string>> sh
   return true;
 }
 
+struct Point rotate(struct Point p, struct Point o, float theta) {
+  return {cos(theta) * (p.x-o.x) - sin(theta) * (p.y-o.y) + o.x, sin(theta) * (p.x-o.x) + cos(theta) * (p.y-o.y) + o.y};
+}
 
 bool Initialize() {
   getdevices();
+
+  start = duration_cast< milliseconds >(
+      system_clock::now().time_since_epoch()
+  );
 
   RtAudio::StreamParameters parameters;
   parameters.deviceId = adc.getDefaultInputDevice();
@@ -278,6 +302,15 @@ bool Initialize() {
       {GL_VERTEX_SHADER, vertex2.str()},
       {GL_FRAGMENT_SHADER, fragment2.str()},
   };
+
+  std::stringstream vertex3;
+  vertex3 << std::ifstream("../center_vertex.glsl").rdbuf();
+  std::stringstream fragment3;
+  fragment3 << std::ifstream("../center_fragment.glsl").rdbuf();
+  std::vector<std::pair<GLenum, std::string>> shaders3 = {
+      {GL_VERTEX_SHADER, vertex3.str()},
+      {GL_FRAGMENT_SHADER, fragment3.str()},
+  };
   printf("Creating programs \n");
   program = glCreateProgram();
   if (!loadShaders(&program, shaders)) {
@@ -287,11 +320,15 @@ bool Initialize() {
   if (!loadShaders(&program2, shaders2)) {
     return false;
   }
+  program3 = glCreateProgram();
+  if (!loadShaders(&program3, shaders3)) {
+    return false;
+  }
   printf("Created programs \n");
 
   
 
-  set_camera(0.0f, -0.1f, 4.0f, 0.0f);
+  set_camera(0.0f, -0.1f, 5.0f, 0.0f);
 
   glGenVertexArrays(1, &vao);
   glGenBuffers(1, &vbo);
@@ -321,9 +358,21 @@ bool Initialize() {
   glBindVertexArray(0);
   glUseProgram(0);
 
+  glGenVertexArrays(1, &vao3);
+  glGenBuffers(1, &vbo3);
+  glBindVertexArray(vao3);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo3);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+  glUseProgram(program3);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+  glEnableVertexAttribArray(0);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindVertexArray(0);
+  glUseProgram(0);
+
   glEnable(GL_PROGRAM_POINT_SIZE);
   glEnable(GL_POINT_SMOOTH);
-  glEnable(GL_BLEND);
+
 
   glLineWidth(5.0);
   
@@ -352,22 +401,33 @@ void Render() {
   std::vector<float> vertices;
 
   for (int i = 0; i < NUM_POINTS; i++) {
-      float theta1 = 5.0f * M_PI * float(i) / float(NUM_POINTS);
-      float theta2 = 5.0f * M_PI * float(i + 1) / float(NUM_POINTS);
-      float theta_corr = 2.0f * M_PI / float(NUM_POINTS);
+      float theta1 = 2.0f * M_PI * float(i) / float(NUM_POINTS);
+      float theta2 = 2.0f * M_PI * float(i + 1) / float(NUM_POINTS);
+      float theta3 = 2.0f * M_PI * float(i + 0.5) / float(NUM_POINTS);
+
+      float theta_corr = 2.0f * M_PI * float(i + 0.5) / float(NUM_POINTS);
 
       float r = red_freqs[i] * 0.05 + 1.0;
       float x1 = radius * cosf(theta1);
       float y1 = radius * sinf(theta1);
-      float x2 = r * radius2 * cosf(theta1 + theta_corr);
-      float y2 = r * radius2 * sinf(theta1 + theta_corr);
+      float x2 = r * radius2 * cosf(theta_corr);
+      float y2 = r * radius2 * sinf(theta_corr);
       float x3 = radius * cosf(theta2);
       float y3 = radius * sinf(theta2);
+      float x4 = radius * cosf(theta3);
+      float y4 = radius * sinf(theta3);
 
       float a[4] = {x1,y1,0.0,0.0};
       float b[4] = {x2,y2,0.0,0.0};
       float c[4] = {x3,y3,0.0,0.0};
+      float d[4] = {x4,y4,0.0,0.0};
       vertices.insert(vertices.end(), std::begin(a), std::end(a));
+      vertices.insert(vertices.end(), std::begin(bary_a), std::end(bary_a));
+      vertices.insert(vertices.end(), std::begin(b), std::end(b));
+      vertices.insert(vertices.end(), std::begin(bary_b), std::end(bary_b));
+      vertices.insert(vertices.end(), std::begin(d), std::end(d));
+      vertices.insert(vertices.end(), std::begin(bary_c), std::end(bary_c));
+      vertices.insert(vertices.end(), std::begin(d), std::end(d));
       vertices.insert(vertices.end(), std::begin(bary_a), std::end(bary_a));
       vertices.insert(vertices.end(), std::begin(b), std::end(b));
       vertices.insert(vertices.end(), std::begin(bary_b), std::end(bary_b));
@@ -385,22 +445,40 @@ void Render() {
 
   for (int angle = 0; angle < 8; angle++) {
     float theta = (M_PI_4) * angle;
-    for (int i = 3; i > 0; i--) {
-        float x1 = -2.0f + i * 0.1f;
-        float y1 = 0.25f + i * 0.1f;
-        float x2 = -2.0f + i * 0.1f;
-        float y2 = -0.25f - i * 0.1f;
+    struct Point o1 = { -1.2f, 0.0};
+    struct Point o2 = { 0.0, 0.0 };
 
-        float x3 = -1.8f + i * 0.2f;
-        float a[4] = {cos(theta) * x1 - sin(theta) * y1, sin(theta) * x1 + cos(theta) * y1,0.0,0.0};
-        float b[4] = {cos(theta) * x2 - sin(theta) * y2, sin(theta) * x2 + cos(theta) * y2,0.0,0.0};
-        float c[4] = {cos(theta) * x3, sin(theta) * x3,0.0,0.0};
-        triangle_vertices.insert(triangle_vertices.end(), std::begin(a), std::end(a));
-        triangle_vertices.insert(triangle_vertices.end(), std::begin(bary_a), std::end(bary_a));
-        triangle_vertices.insert(triangle_vertices.end(), std::begin(b), std::end(b));
-        triangle_vertices.insert(triangle_vertices.end(), std::begin(bary_b), std::end(bary_b));
-        triangle_vertices.insert(triangle_vertices.end(), std::begin(c), std::end(c));
-        triangle_vertices.insert(triangle_vertices.end(), std::begin(bary_c), std::end(bary_c));
+    int draws = 4;
+
+    if(angle % 2 == 0) {
+      draws = 1;
+    }
+
+    for (int j = 0; j < draws; j++) {
+      float beta = -(M_PI_2) * j;
+      
+      for (int i = 3; i > 0; i--) {
+          struct Point p1 = rotate({ -2.0f + i * 0.05f, 0.25f + i * 0.1f}, o1, beta);
+          struct Point p2 = rotate({ -2.0f + i * 0.05f, -0.25f - i * 0.1f}, o1, beta);
+          struct Point p3 = rotate({ -1.75f + i * 0.15f, 0.0}, o1, beta);
+
+          p1 = rotate(p1, o2, theta);
+          p2 = rotate(p2, o2, theta);
+          p3 = rotate(p3, o2, theta);
+
+          int f = 3 - i;
+          float sound = red_freqs[0] * 0.001 * f;
+
+          float a[4] = {p1.x, p1.y, 0.1f * f + sound,0.0};
+          float b[4] = {p2.x, p2.y, 0.1f * f + sound,0.0};
+          float c[4] = {p3.x, p3.y, 0.1f * f + sound,0.0};
+          triangle_vertices.insert(triangle_vertices.end(), std::begin(a), std::end(a));
+          triangle_vertices.insert(triangle_vertices.end(), std::begin(bary_a), std::end(bary_a));
+          triangle_vertices.insert(triangle_vertices.end(), std::begin(b), std::end(b));
+          triangle_vertices.insert(triangle_vertices.end(), std::begin(bary_b), std::end(bary_b));
+          triangle_vertices.insert(triangle_vertices.end(), std::begin(c), std::end(c));
+          triangle_vertices.insert(triangle_vertices.end(), std::begin(bary_c), std::end(bary_c));
+      }
     }
   }
 
@@ -408,6 +486,13 @@ void Render() {
   glBindBuffer(GL_ARRAY_BUFFER, vbo2);
   glBufferData(GL_ARRAY_BUFFER, triangle_vertices.size() * sizeof(float), &triangle_vertices[0], GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
+  float x = 2.0;
+  GLfloat quads[3*6] = {-x,-x,0.0, -x,x,0.0, x,x,0.0, -x,-x,0.0, x,-x,0.0, x,x,0.0 };
+
+  glBindBuffer(GL_ARRAY_BUFFER, vbo3);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(quads), quads, GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+
 
 
 
@@ -420,11 +505,31 @@ void Render() {
   glBindVertexArray(0);
   glUseProgram(0);
 
+  //glBlendFunc(GL_ONE_MINUS_DST_ALPHA,GL_DST_ALPHA);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glEnable(GL_BLEND);
+
+  glUseProgram(program3);
+  milliseconds ms = duration_cast< milliseconds >(
+      system_clock::now().time_since_epoch()
+  );
+
+  float time = (double)((double)ms.count() - (double)start.count()) / 1000.0f;
+  glUniform1f(glGetUniformLocation(program3, "time"), (float)time);
+  glBindVertexArray(vao3);
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+  glBindVertexArray(0);
+  glUseProgram(0);
+
+
+  glDisable(GL_BLEND);
+
+
     // Use the shader program
   glUseProgram(program);
   glBindVertexArray(vao);
   // Draw the circle as a line loop
-  glDrawArrays(GL_TRIANGLES, 0, NUM_POINTS * 3);
+  glDrawArrays(GL_TRIANGLES, 0, NUM_POINTS * 6);
   // Unbind VAO and shader
   glBindVertexArray(0);
   glUseProgram(0);
@@ -443,6 +548,7 @@ int main() {
     printf("Failed to create window.\n");
     return 1;
   }
+  //glClearColor(0.0,0.0,0.0,0.0);
   glfwMakeContextCurrent(window);
   glfwSetKeyCallback(window, key_callback);
   glfwSetFramebufferSizeCallback(window, resize);

@@ -1,11 +1,9 @@
 #version 330 core
 #define M_PI 3.1415926535897932384626433832795
-#define P0  0.1
+#define P0  0.01
 #define P1  -0.1
-
-
-#define EDGE   0.005
-#define SMOOTH 0.0025
+#define EDGE   0.001
+#define SMOOTH 0.001
 
 
 in float volume;
@@ -17,48 +15,26 @@ uniform mat4 view;
 uniform mat4 proj;
 
 
-float N_i_1 (in float t, in float i)
+#define STRIPES 30.0
+#define STEP_SIZE 0.001
+
+float spiral(in vec2 uv, float angle2)
 {
-    // return 1 if i < t < i+1, else return 0
-    return step(i, t) * step(t,i+1.0);
+    // Calculate and adjust angle of this vector
+    float angle = atan(uv.y, uv.x);
+    angle += (1.0 - STEP_SIZE * floor(length(uv) / STEP_SIZE)) * angle2;
+    
+    // Return the color of the stripe at the adjusted angle
+    return smoothstep(0.5, 0.5, sin(angle * STRIPES));
 }
 
-float N_i_2 (in float t, in float i)
+vec2 rotateUV(vec2 uv, float rotation)
 {
-    return
-        N_i_1(t, i)       * (t - i) +
-        N_i_1(t, i + 1.0) * (i + 2.0 - t);
-}
-
-float N_i_3 (in float t, in float i)
-{
-    return
-        N_i_2(t, i)       * (t - i) / 2.0 +
-        N_i_2(t, i + 1.0) * (i + 3.0 - t) / 2.0;
-}
-
-float SplineValue(in float t)
-{
-    return
-        P0 * N_i_3(t, 0.0) +
-        P1 * N_i_3(t, 1.0);  
-}
-
-// F(x,y) = F(x) - y
-float F ( in vec2 coords )
-{
-    // time in this curve goes from 0.0 to 10.0 but values
-    // are only valid between 2.0 and 8.0
-    float T = coords.x*6.0 + 2.0;
-    return SplineValue(T) - coords.y;
-}
-
-// signed distance function for F(x,y)
-float SDF( in vec2 coords )
-{
-    float v = F(coords);
-    float slope = dFdx(v) / dFdx(coords.x);
-    return abs(v)/length(vec2(slope, -1.0));
+    float mid = 0.0;
+    return vec2(
+        cos(rotation) * (uv.x - mid) + sin(rotation) * (uv.y - mid) + mid,
+        cos(rotation) * (uv.y - mid) - sin(rotation) * (uv.x - mid) + mid
+    );
 }
 
 float circle(vec2 uv,float rad,float blur,vec2 pos){
@@ -85,11 +61,14 @@ float udSegment( in vec2 p, in vec2 a, in vec2 b )
 
 void main() {
     gl_FragColor = vec4(1.0, 1.0, 1.0, 0.9);
+	
 	//center origin point
 	
 	vec4 fragCoord = view * model * gl_FragCoord;
 
 	vec2 uv = ( fragCoord.xy -.5* iResolution.xy) / iResolution.y;
+
+    uv = rotateUV(uv, 0.3 * sin(time / 2.0));
 	
 	vec2 pupil_location = vec2(0.0,0.04 * sin(time));
 	float col0  = circle(uv, 0.35, 1.0, vec2(0.0,0.0));
@@ -103,8 +82,11 @@ void main() {
 	float col7 = circle(uv, 0.035,1.0, pupil_location) ;
     float col8 = circle(uv, 0.015,0.98,pupil_location) ;
 
-    gl_FragColor = (ca(1.0 - col0) - c(1.0 - col0)) + (c(col1) - c(col2)) + (c(col3) - c(col4)) + (c(col5) - c(col6)) + (c(col7) - c(col8));
+    float spl = spiral(uv, 0.5);
 
+    gl_FragColor = (ca(1.0 - col0) - c(1.0 - col0))   +  (c(col1) - c(col2)) + (c(col3) - c(col4)) + (c(col5) - c(col6)) + (c(col7) - c(col8));
+
+    /*
 	int elements = 12;
 	for(int i = 0; i < elements; i++) {
 		float theta = 2.0f * M_PI * i / elements;
@@ -114,5 +96,8 @@ void main() {
 		float d = udSegment( uv, v1, v2 ) - 0.001;
 		vec4 col = vec4(1.0) - sign(d)*vec4(1.0,1.0,1.0, 1.0);
 		gl_FragColor += col;
-	}
+	}*/
+
+	
+	
 }

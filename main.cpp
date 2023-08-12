@@ -31,8 +31,10 @@ using namespace std::chrono;
 using namespace std;
 
 GLFWwindow* window;
-GLuint program, program2, program3;
-GLuint vao, vao2, vao3, vbo, vbo2, vbo3;
+GLuint program, program2, program3, program4;
+
+
+GLuint vao, vao2, vao3, vao4, vbo, vbo2, vbo3, vbo4;
 float radius = 1.0f;
 float radius2 = 1.25f;
 RtAudio adc(RtAudio::Api::LINUX_PULSE);
@@ -64,14 +66,11 @@ milliseconds start;
 void Render();
 
 enum VisMode{
-  LINES,
-  CIRCLE,
-  CIRCLE_FLAT,
-  SPHERE,
-  SPHERE_SPIRAL
+  SPECTRUM,
+  ORIGINAL
 };
 
-VisMode mode = CIRCLE;
+VisMode mode = SPECTRUM;
 
 
 int record(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
@@ -140,8 +139,8 @@ void getdevices() {
 }
 
 static void set_camera(float cam_x, float cam_y, float cam_z, float target_z) {
-    GLuint programs[3] = {program, program2, program3};
-    for (int i = 0; i < 3; i++) {
+    GLuint programs[4] = {program, program2, program3, program4};
+    for (int i = 0; i < 4; i++) {
         glUseProgram(programs[i]);
 
         glm::mat4 trans = glm::mat4(1.0f);
@@ -167,16 +166,10 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
 {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS){
         glfwSetWindowShouldClose(window, GLFW_TRUE);
-    } else if (key == GLFW_KEY_L) {
-      mode = VisMode::LINES;
-    } else if (key == GLFW_KEY_C) {
-      mode = VisMode::CIRCLE;
-    } else if (key == GLFW_KEY_V) {
-      mode = VisMode::CIRCLE_FLAT;
-    }else if (key == GLFW_KEY_S) {
-      mode = VisMode::SPHERE;
-    } else if (key == GLFW_KEY_X) {
-      mode = VisMode::SPHERE_SPIRAL;
+    } else if (key == GLFW_KEY_S) {
+      mode = VisMode::SPECTRUM;
+    } else if (key == GLFW_KEY_O) {
+      mode = VisMode::ORIGINAL;
     } else if (key == GLFW_KEY_F) {
       set_camera(0.0f, -2.5f, 2.5f, 0.0f);
     }
@@ -185,16 +178,15 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
 static void resize(GLFWwindow* window, int width, int height){
 	  glViewport(0,0,width,height);
     
-    GLuint programs[3] = {program, program2, program3};
-    for (int i = 0; i < 3; i++) {
+    GLuint programs[4] = {program, program2, program3, program4};
+    for (int i = 0; i < 4; i++) {
         glUseProgram(programs[i]);
 
       GLfloat uResolution[2] = { (float)width, (float)height };
       glUniform2fv(glGetUniformLocation(programs[i], "iResolution"), 1, uResolution);
 
       glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 1.0f, 10.0f);
-      GLint uniProj = glGetUniformLocation(programs[i], "proj");
-      glUniformMatrix4fv(uniProj, 1, GL_FALSE, glm::value_ptr(proj));
+      glUniformMatrix4fv(glGetUniformLocation(programs[i], "proj"), 1, GL_FALSE, glm::value_ptr(proj));
     }
 }
 
@@ -311,6 +303,15 @@ bool Initialize() {
       {GL_VERTEX_SHADER, vertex3.str()},
       {GL_FRAGMENT_SHADER, fragment3.str()},
   };
+
+  std::stringstream vertex4;
+  vertex4 << std::ifstream("../background_vertex.glsl").rdbuf();
+  std::stringstream fragment4;
+  fragment4 << std::ifstream("../background_fragment.glsl").rdbuf();
+  std::vector<std::pair<GLenum, std::string>> shaders4 = {
+      {GL_VERTEX_SHADER, vertex4.str()},
+      {GL_FRAGMENT_SHADER, fragment4.str()},
+  };
   printf("Creating programs \n");
   program = glCreateProgram();
   if (!loadShaders(&program, shaders)) {
@@ -322,6 +323,10 @@ bool Initialize() {
   }
   program3 = glCreateProgram();
   if (!loadShaders(&program3, shaders3)) {
+    return false;
+  }
+  program4 = glCreateProgram();
+  if (!loadShaders(&program4, shaders4)) {
     return false;
   }
   printf("Created programs \n");
@@ -370,6 +375,18 @@ bool Initialize() {
   glBindVertexArray(0);
   glUseProgram(0);
 
+  glGenVertexArrays(1, &vao4);
+  glGenBuffers(1, &vbo4);
+  glBindVertexArray(vao4);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo4);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+  glUseProgram(program4);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+  glEnableVertexAttribArray(0);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindVertexArray(0);
+  glUseProgram(0);
+
   glEnable(GL_PROGRAM_POINT_SIZE);
   glEnable(GL_POINT_SMOOTH);
 
@@ -401,17 +418,20 @@ void Render() {
   std::vector<float> vertices;
 
   for (int i = 0; i < NUM_POINTS; i++) {
-      float theta1 = 2.0f * M_PI * float(i) / float(NUM_POINTS);
+      float theta1 = 2.0f * M_PI * float(i - 0.1) / float(NUM_POINTS);
       float theta2 = 2.0f * M_PI * float(i + 1) / float(NUM_POINTS);
       float theta3 = 2.0f * M_PI * float(i + 0.5) / float(NUM_POINTS);
 
       float theta_corr = 2.0f * M_PI * float(i + 0.5) / float(NUM_POINTS);
 
-      float r = red_freqs[i] * 0.05 + 1.0;
+      float sound = red_freqs[5] * 0.01 + 1.0;
+      if (mode == SPECTRUM) {
+        sound = red_freqs[i] * 0.05 + 1.0;
+      }
       float x1 = radius * cosf(theta1);
       float y1 = radius * sinf(theta1);
-      float x2 = r * radius2 * cosf(theta_corr);
-      float y2 = r * radius2 * sinf(theta_corr);
+      float x2 = sound * radius2 * cosf(theta_corr);
+      float y2 = sound * radius2 * sinf(theta_corr);
       float x3 = radius * cosf(theta2);
       float y3 = radius * sinf(theta2);
       float x4 = radius * cosf(theta3);
@@ -467,7 +487,11 @@ void Render() {
           p3 = rotate(p3, o2, theta);
 
           int f = 3 - i;
-          float sound = red_freqs[0] * 0.001 * f;
+          float sound = 0.0;
+
+          if (mode == SPECTRUM) {
+            sound = red_freqs[0] * 0.001 * f;
+          }
 
           float a[4] = {p1.x, p1.y, 0.1f * f + sound,0.0};
           float b[4] = {p2.x, p2.y, 0.1f * f + sound,0.0};
@@ -486,35 +510,41 @@ void Render() {
   glBindBuffer(GL_ARRAY_BUFFER, vbo2);
   glBufferData(GL_ARRAY_BUFFER, triangle_vertices.size() * sizeof(float), &triangle_vertices[0], GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
+
   float x = 2.0;
   GLfloat quads[3*6] = {-x,-x,0.0, -x,x,0.0, x,x,0.0, -x,-x,0.0, x,-x,0.0, x,x,0.0 };
-
   glBindBuffer(GL_ARRAY_BUFFER, vbo3);
   glBufferData(GL_ARRAY_BUFFER, sizeof(quads), quads, GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+  x = 4.0;
+  GLfloat quads2[3*6] = {-x,-x,0.0, -x,x,0.0, x,x,0.0, -x,-x,0.0, x,-x,0.0, x,x,0.0 };
+  glBindBuffer(GL_ARRAY_BUFFER, vbo4);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(quads2), quads2, GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 
+  milliseconds ms = duration_cast< milliseconds >(
+      system_clock::now().time_since_epoch()
+  );
+  float time = (double)((double)ms.count() - (double)start.count()) / 1000.0f;
+
+  glUseProgram(program4);
+  glBindVertexArray(vao4);
+  glUniform1f(glGetUniformLocation(program4, "time"), (float)time);
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+  glBindVertexArray(0);
+  glUseProgram(0);
 
   glUseProgram(program2);
   glBindVertexArray(vao2);
-  
-  //glDrawArrays(GL_LINE_STRIP, 0, NUM_TRIANGLES * 3);
-  //glDrawArrays(GL_POINTS, 0, NUM_TRIANGLES * 3);
   glDrawArrays(GL_TRIANGLES, 0, NUM_TRIANGLES * 3);
   glBindVertexArray(0);
   glUseProgram(0);
 
-  //glBlendFunc(GL_ONE_MINUS_DST_ALPHA,GL_DST_ALPHA);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glEnable(GL_BLEND);
-
   glUseProgram(program3);
-  milliseconds ms = duration_cast< milliseconds >(
-      system_clock::now().time_since_epoch()
-  );
-
-  float time = (double)((double)ms.count() - (double)start.count()) / 1000.0f;
   glUniform1f(glGetUniformLocation(program3, "time"), (float)time);
   glBindVertexArray(vao3);
   glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -525,12 +555,9 @@ void Render() {
   glDisable(GL_BLEND);
 
 
-    // Use the shader program
   glUseProgram(program);
   glBindVertexArray(vao);
-  // Draw the circle as a line loop
   glDrawArrays(GL_TRIANGLES, 0, NUM_POINTS * 6);
-  // Unbind VAO and shader
   glBindVertexArray(0);
   glUseProgram(0);
 }

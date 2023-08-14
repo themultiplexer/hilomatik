@@ -22,7 +22,7 @@
 #include <chrono>
 #define VERT_LENGTH 4 //x,y,z,volume
 
-#define FRAMES 512
+#define FRAMES 1024
 #define NUM_POINTS 32
 #define NUM_TRIANGLES 3 * 4 * 8
 
@@ -171,7 +171,9 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     } else if (key == GLFW_KEY_O) {
       mode = VisMode::ORIGINAL;
     } else if (key == GLFW_KEY_F) {
-      set_camera(0.0f, -2.5f, 2.5f, 0.0f);
+      set_camera(0.0f, -4.0f, 4.0f, -0.5f);
+    } else if (key == GLFW_KEY_R) {
+      set_camera(0.0f, -0.1f, 5.5f, 0.0f);
     }
 }
 
@@ -333,7 +335,7 @@ bool Initialize() {
 
   
 
-  set_camera(0.0f, -0.1f, 5.0f, 0.0f);
+  set_camera(0.0f, -0.1f, 5.5f, 0.0f);
 
   glGenVertexArrays(1, &vao);
   glGenBuffers(1, &vbo);
@@ -369,8 +371,10 @@ bool Initialize() {
   glBindBuffer(GL_ARRAY_BUFFER, vbo3);
   glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
   glUseProgram(program3);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (GLvoid*)(3 * sizeof(GLfloat)));
+  glEnableVertexAttribArray(1);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
   glUseProgram(0);
@@ -381,8 +385,10 @@ bool Initialize() {
   glBindBuffer(GL_ARRAY_BUFFER, vbo4);
   glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
   glUseProgram(program4);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (GLvoid*)(3 * sizeof(GLfloat)));
+  glEnableVertexAttribArray(1);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
   glUseProgram(0);
@@ -438,7 +444,7 @@ void Render() {
       float y4 = radius * sinf(theta3);
 
       float a[4] = {x1,y1,0.0,0.0};
-      float b[4] = {x2,y2,0.0,0.0};
+      float b[4] = {x2,y2,0.1,0.0};
       float c[4] = {x3,y3,0.0,0.0};
       float d[4] = {x4,y4,0.0,0.0};
       vertices.insert(vertices.end(), std::begin(a), std::end(a));
@@ -512,13 +518,13 @@ void Render() {
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
   float x = 2.0;
-  GLfloat quads[3*6] = {-x,-x,0.0, -x,x,0.0, x,x,0.0, -x,-x,0.0, x,-x,0.0, x,x,0.0 };
+  GLfloat quads[5*6] = {-x,-x,0.0,0.0,0.0, -x,x,0.0,0.0,1.0, x,x,0.0,1.0,1.0, -x,-x,0.0,0.0,0.0, x,-x,0.0,1.0,0.0, x,x,0.0,1.0,1.0, };
   glBindBuffer(GL_ARRAY_BUFFER, vbo3);
   glBufferData(GL_ARRAY_BUFFER, sizeof(quads), quads, GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-  x = 4.0;
-  GLfloat quads2[3*6] = {-x,-x,0.0, -x,x,0.0, x,x,0.0, -x,-x,0.0, x,-x,0.0, x,x,0.0 };
+  x = 10.0;
+  GLfloat quads2[5*6] = {-x,-x,0.0,0.0,0.0, -x,x,0.0,0.0,1.0, x,x,0.0,1.0,1.0, -x,-x,0.0,0.0,0.0, x,-x,0.0,1.0,0.0, x,x,0.0,1.0,1.0, };
   glBindBuffer(GL_ARRAY_BUFFER, vbo4);
   glBufferData(GL_ARRAY_BUFFER, sizeof(quads2), quads2, GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -529,6 +535,7 @@ void Render() {
   );
   float time = (double)((double)ms.count() - (double)start.count()) / 1000.0f;
 
+  //Background
   glUseProgram(program4);
   glBindVertexArray(vao4);
   glUniform1f(glGetUniformLocation(program4, "time"), (float)time);
@@ -536,16 +543,20 @@ void Render() {
   glBindVertexArray(0);
   glUseProgram(0);
 
+  //Triangles
   glUseProgram(program2);
   glBindVertexArray(vao2);
   glDrawArrays(GL_TRIANGLES, 0, NUM_TRIANGLES * 3);
+  glUniform1f(glGetUniformLocation(program3, "vol"), (float)red_freqs[5] * 0.01);
   glBindVertexArray(0);
   glUseProgram(0);
 
+  //Center
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glEnable(GL_BLEND);
   glUseProgram(program3);
   glUniform1f(glGetUniformLocation(program3, "time"), (float)time);
+  glUniform1f(glGetUniformLocation(program3, "vol"), (float)red_freqs[5] * 0.01);
   glBindVertexArray(vao3);
   glDrawArrays(GL_TRIANGLES, 0, 6);
   glBindVertexArray(0);
@@ -570,7 +581,8 @@ int main() {
       exit(EXIT_FAILURE);
 
 
-  window = glfwCreateWindow(client_width, client_height, "My Title", NULL, NULL);
+  //window = glfwCreateWindow(client_width, client_height, "My Title", NULL, NULL);
+  window = glfwCreateWindow(client_width, client_height, "My Title", glfwGetPrimaryMonitor(), nullptr);
   if (!window) {
     printf("Failed to create window.\n");
     return 1;

@@ -7,6 +7,7 @@
 
 
 in float volume;
+in vec2 vuv;
 uniform vec2 iResolution;
 uniform float time;
 
@@ -62,25 +63,21 @@ float udSegment( in vec2 p, in vec2 a, in vec2 b )
 void main() {
     gl_FragColor = vec4(1.0, 1.0, 1.0, 0.9);
 	
-	//center origin point
+    vec2 uv = vuv;
+
+    uv = rotateUV(uv, -0.3 * (time / 2.0));
 	
-	vec4 fragCoord = view * model * gl_FragCoord;
+	vec2 pupil_location = vec2(0.0,0.1 * sin(time));
+	float col0  = circle(uv, 1.4 + volume, 1.0, vec2(0.0,0.0));
 
-	vec2 uv = ( fragCoord.xy -.5* iResolution.xy) / iResolution.y;
-
-    uv = rotateUV(uv, 0.3 * sin(time / 2.0));
-	
-	vec2 pupil_location = vec2(0.0,0.04 * sin(time));
-	float col0  = circle(uv, 0.35, 1.0, vec2(0.0,0.0));
-
-    float col1  = circle(uv, 0.245,1.0, vec2(0.0,0.0)) ;
-    float col2 = circle(uv, 0.235,1.0, vec2(0.0,0.0)) ;
-    float col3 = circle(uv, 0.12,1.0, vec2(0.0,0.0)) ;
-    float col4 = circle(uv, 0.10,1.0,vec2(0.0,0.0)) ;
-    float col5 = ellipse(uv, vec2(0.06,0.12),1.0, vec2(0.0,0.0)) ;
-    float col6 = ellipse(uv, vec2(0.04,0.1),1.0,vec2(0.0,0.0)) ;
-	float col7 = circle(uv, 0.035,1.0, pupil_location) ;
-    float col8 = circle(uv, 0.015,0.98,pupil_location) ;
+    float col1  = circle(uv, 1.01,1.0, vec2(0.0,0.0)) ;
+    float col2 = circle(uv, 0.975,1.0, vec2(0.0,0.0)) ;
+    float col3 = circle(uv, 0.35,1.0, vec2(0.0,0.0)) ;
+    float col4 = circle(uv, 0.3,1.0,vec2(0.0,0.0)) ;
+    float col5 = ellipse(uv, vec2(0.175,0.35),1.0, vec2(0.0,0.0)) ;
+    float col6 = ellipse(uv, vec2(0.125,0.3),1.0,vec2(0.0,0.0)) ;
+	float col7 = circle(uv, 0.11,1.0, pupil_location) ;
+    float col8 = circle(uv, 0.05,0.98,pupil_location) ;
 
     float spl = spiral(uv, 0.5);
 

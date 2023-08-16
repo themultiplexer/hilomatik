@@ -59,7 +59,6 @@ float freqs[FRAMES];
 
 float red_rawdata[NUM_POINTS];
 float red_freqs[NUM_POINTS];
-float last_freqs[NUM_POINTS];
 
 float coarse_freqs[4];
 
@@ -107,6 +106,7 @@ int record(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
   int fft_group = (FRAMES/4) / NUM_POINTS;
   for(int i = 0; i < NUM_POINTS; i++) {
     red_rawdata[i] = 0;
+    float last_freq = red_freqs[i];
     red_freqs[i] = 0;
     for(int j = 0; j < sample_group; j++) {
       red_rawdata[i] += rawdata[i * sample_group + j];
@@ -114,21 +114,21 @@ int record(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
     for(int j = 0; j < fft_group; j++) {
       red_freqs[i] += freqs[i * fft_group + j + 5];
     }
-    red_freqs[i] += last_freqs[i];
+    red_freqs[i] /= fft_group;
+    red_freqs[i] += last_freq;
     red_freqs[i] /= 2.0;
-  }
-
-  for(int i = 0; i < NUM_POINTS; i++) {
-    last_freqs[i] = red_freqs[i];
   }
   
   int coarse_group = NUM_POINTS / 4;
   for(int i = 0; i < 4; i++) {
+    float last_freq = coarse_freqs[i];
     coarse_freqs[i] = 0;
     for(int j = 0; j < coarse_group; j++) {
       coarse_freqs[i] += red_freqs[i * coarse_group + j];
     }
     coarse_freqs[i] /= coarse_group;
+    coarse_freqs[i] += last_freq;
+    coarse_freqs[i] /= 2.0;
   }
   // Do something with the data in the "inputBuffer" buffer.
   return 0;
@@ -564,10 +564,10 @@ void Render() {
 
       float theta_corr = 2.0f * M_PI * float(i + 0.5) / float(NUM_POINTS);
 
-      float sound = coarse_freqs[0] * 0.01 + 1.0;
+      float sound = coarse_freqs[0] * 0.1 + 1.0;
       float inner_radius = radius * sound;
       if (mode == SPECTRUM) {
-        sound = red_freqs[i] * 0.05 + 1.0;
+        sound = red_freqs[i] * 0.5 + 1.0;
         inner_radius = radius;
       }
       float x1 = inner_radius * cosf(theta1);
@@ -618,7 +618,7 @@ void Render() {
   glUseProgram(program2);
   glBindVertexArray(vao2);
   glDrawArrays(GL_TRIANGLES, 0, NUM_TRIANGLES * 3);
-  glUniform1f(glGetUniformLocation(program3, "vol"), (float)coarse_freqs[2] * 0.03);
+  glUniform1f(glGetUniformLocation(program3, "vol"), (float)coarse_freqs[2] * 0.3);
   glBindVertexArray(0);
   glUseProgram(0);
 
@@ -630,7 +630,7 @@ void Render() {
   if (mode == SPECTRUM) {
     glUniform1f(glGetUniformLocation(program3, "vol"), 0.0);
   } else {
-    glUniform1f(glGetUniformLocation(program3, "vol"), (float)coarse_freqs[0] * 0.01);
+    glUniform1f(glGetUniformLocation(program3, "vol"), (float)coarse_freqs[0] * 0.1);
   }
   glBindVertexArray(vao3);
   glDrawArrays(GL_TRIANGLES, 0, 6);

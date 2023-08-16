@@ -32,6 +32,35 @@ vec4 sines(vec2 uv, float offset){
     return vec4(0.0);
 }
 
+vec4 test2(vec2 uv) {
+    float every = 0.45;
+    float xx = length(uv);
+    float yy = (mod(atan(uv.y,uv.x), every) - (every/2.0));
+    float radius = 0.1;
+    vec2 ocenter = vec2(0.8, 0.0);
+    vec2 center = vec2(0.6, 0.0);
+    float kArc = 0.5;
+    float angle = yy;
+    
+    xx = xx * cos(yy);
+    yy = xx * sin(yy);
+    
+    float dist = sqrt(pow(xx - center.x, 2.0) + pow(yy - center.y, 2.0)) - radius;
+    float dist2 = sqrt(pow(xx - center.x, 2.0) + pow(yy - center.y, 2.0)) - 0.05;
+    float dist3 = sqrt(pow(xx - ocenter.x, 2.0) + pow(yy - ocenter.y, 2.0)) - radius;
+    float dist4 = length(uv) - 0.5;
+    
+    float segment = step( angle, kArc ) * step( 0.0, angle );
+    float segment2 = step( angle + 0.5, kArc ) * step( 0.0, angle + 0.5 );
+	
+    float lineWidth = 2.0;
+    float res = smoothstep(1.0, 0.0, abs(dist) / fwidth(dist) / lineWidth) * mix( segment, 1.0, step( 1.0, kArc ) );
+    res += smoothstep(1.0, 0.0, abs(dist2) / fwidth(dist2) / lineWidth);
+    res += smoothstep(1.0, 0.0, abs(dist3) / fwidth(dist3) / lineWidth) * mix( segment2, 1.0, step( 1.0, kArc ) );
+    res += 2.0 * smoothstep(1.0, 0.0, abs(dist4) / fwidth(dist4) / lineWidth);
+    return vec4(vec3(res), res);
+}
+
 vec2 rotateUV(vec2 uv, float rotation)
 {
     float mid = 0.0;
@@ -60,7 +89,7 @@ vec4 ca(float col){
 void main() {
     vec2 uv = vuv;
 
-    uv = rotateUV(uv, -0.3 * (time / 2.0));
+    uv = rotateUV(uv, -0.3 * (time / 1.0));
 	
 	vec2 pupil_location = vec2(0.0,0.1 * sin(time));
 	float col0 = circle(uv, 1.5 + volume, 1.0, vec2(0.0,0.0));
@@ -69,11 +98,15 @@ void main() {
     float col2 = circle(uv, 0.975+ volume,0.99, vec2(0.0,0.0)) ;
     float col3 = circle(uv, 0.45,1.0, vec2(0.0,0.0)) ;
     float col4 = circle(uv, 0.39,1.0,vec2(0.0,0.0)) ;
-    float col5 = ellipse(uv, vec2(0.225,0.45),1.0, vec2(0.0,0.0)) ;
-    float col6 = ellipse(uv, vec2(0.15,0.39),1.0,vec2(0.0,0.0)) ;
+    float col5 = ellipse(uv, vec2(0.225,0.45),0.99, vec2(0.0,0.0)) ;
+    float col6 = ellipse(uv, vec2(0.15,0.39),0.98,vec2(0.0,0.0)) ;
 	float col7 = circle(uv, 0.12,1.0, pupil_location) ;
     float col8 = circle(uv, 0.05,1.0,pupil_location) ;
 
     gl_FragColor = (ca(1.0 - col0) - c(1.0 - col0))   +  (c(col1) - c(col2)) + (c(col3) - c(col4)) + (c(col5) - c(col6)) + (c(col7) - c(col8));
-    gl_FragColor += sines(uv, 0.0) + sines(uv, 0.05);
+    if(sin(time * 0.2) > 0.0){
+        gl_FragColor += sines(uv, 0.0) + sines(uv, 0.05);
+    } else {
+        gl_FragColor += test2(uv);
+    }
 }

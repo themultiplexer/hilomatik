@@ -104,6 +104,7 @@ void main() {
     float col8 = circle(uv, 0.05,1.0,pupil_location) ;
 
     gl_FragColor = (ca(1.0 - col0) - c(1.0 - col0))   +  (c(col1) - c(col2)) + (c(col3) - c(col4)) + (c(col5) - c(col6)) + (c(col7) - c(col8));
+    
     if(sin(time * 0.2) > 0.0){
         gl_FragColor += sines(uv, 0.0) + sines(uv, 0.05);
     } else {

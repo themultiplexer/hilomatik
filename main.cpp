@@ -76,10 +76,18 @@ void Render();
 
 enum VisMode{
   SPECTRUM,
-  ORIGINAL
+  ORIGINAL,
+  PIXEL
 };
 
-VisMode mode = SPECTRUM;
+enum BackgroundMode{
+  SPIRAL,
+  RINGS,
+  ARPEGGIO,
+};
+
+VisMode mode = PIXEL;
+BackgroundMode backgroundMode = ARPEGGIO;
 
 
 int record(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
@@ -189,6 +197,10 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
       mode = VisMode::SPECTRUM;
     } else if (key == GLFW_KEY_O && action == GLFW_PRESS) {
       mode = VisMode::ORIGINAL;
+    } else if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+      mode = VisMode::PIXEL;
+    } else if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9 && action == GLFW_PRESS) {
+      backgroundMode = (BackgroundMode)(key - GLFW_KEY_0);
     } else if (key == GLFW_KEY_F && action == GLFW_PRESS) {
       set_camera(0.0f, -4.0f, 4.0f, -0.5f);
     } else if (key == GLFW_KEY_R && action == GLFW_PRESS) {
@@ -610,40 +622,45 @@ void Render() {
   glUseProgram(program4);
   glBindVertexArray(vao4);
   glUniform1f(glGetUniformLocation(program4, "time"), (float)time);
+  glUniform1i(glGetUniformLocation(program4, "mode"), (int)backgroundMode);
+  glUniform1f(glGetUniformLocation(program4, "vol"), (float)coarse_freqs[0] * 0.02);
   glDrawArrays(GL_TRIANGLES, 0, 6);
   glBindVertexArray(0);
   glUseProgram(0);
 
-  //Triangles
-  glUseProgram(program2);
-  glBindVertexArray(vao2);
-  glDrawArrays(GL_TRIANGLES, 0, NUM_TRIANGLES * 3);
-  glUniform1f(glGetUniformLocation(program3, "vol"), (float)coarse_freqs[2] * 0.3);
-  glBindVertexArray(0);
-  glUseProgram(0);
+  if (mode != PIXEL){
+    //Triangles
+    glUseProgram(program2);
+    glBindVertexArray(vao2);
+    glDrawArrays(GL_TRIANGLES, 0, NUM_TRIANGLES * 3);
+    glUniform1f(glGetUniformLocation(program3, "vol"), (float)coarse_freqs[2] * 0.3);
+    glBindVertexArray(0);
+    glUseProgram(0);
 
-  //Center
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  glEnable(GL_BLEND);
-  glUseProgram(program3);
-  glUniform1f(glGetUniformLocation(program3, "time"), (float)time);
-  if (mode == SPECTRUM) {
-    glUniform1f(glGetUniformLocation(program3, "vol"), 0.0);
-  } else {
-    glUniform1f(glGetUniformLocation(program3, "vol"), (float)coarse_freqs[0] * 0.1);
+    //Center
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND);
+    glUseProgram(program3);
+    glUniform1f(glGetUniformLocation(program3, "time"), (float)time);
+    if (mode == SPECTRUM) {
+      glUniform1f(glGetUniformLocation(program3, "vol"), 0.0);
+    } else {
+      glUniform1f(glGetUniformLocation(program3, "vol"), (float)coarse_freqs[0] * 0.1);
+    }
+    glBindVertexArray(vao3);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glUseProgram(0);
+
+    glDisable(GL_BLEND);
+
+    glUseProgram(program);
+    glBindVertexArray(vao);
+    glDrawArrays(GL_TRIANGLES, 0, NUM_POINTS * 6);
+    glBindVertexArray(0);
+    glUseProgram(0);
+
   }
-  glBindVertexArray(vao3);
-  glDrawArrays(GL_TRIANGLES, 0, 6);
-  glBindVertexArray(0);
-  glUseProgram(0);
-
-  glDisable(GL_BLEND);
-
-  glUseProgram(program);
-  glBindVertexArray(vao);
-  glDrawArrays(GL_TRIANGLES, 0, NUM_POINTS * 6);
-  glBindVertexArray(0);
-  glUseProgram(0);
 
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
   glEnable(GL_BLEND);

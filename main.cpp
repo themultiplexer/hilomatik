@@ -3,7 +3,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <GL/gl.h>
-#include <GL/glx.h>
+//#include <GL/glx.h>
 #include <GL/glext.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -12,7 +12,11 @@
 #include "stb_image.h"
 
 #include <fstream>
+#ifdef _WIN32
+#include <kiss_fft.h>
+#elif
 #include <kissfft/kiss_fft.h>
+#endif
 #include <math.h>
 #include <rtaudio/RtAudio.h>
 #include <set>
@@ -22,12 +26,15 @@
 #include <vector>
 #include <time.h>
 #include <chrono>
-#define VERT_LENGTH 4 //x,y,z,volume
+#include <numeric>
+#include <tuple>
 
+#define VERT_LENGTH 4 //x,y,z,volume
+#define SHADER_PATH "../../../"
 #define FRAMES 1024
 #define NUM_POINTS 32
 #define NUM_TRIANGLES 3 * 4 * 8
-
+#define COARSE_NUM 8
 
 using namespace std::chrono;
 using namespace std;
@@ -60,7 +67,7 @@ float freqs[FRAMES];
 float red_rawdata[NUM_POINTS];
 float red_freqs[NUM_POINTS];
 
-float coarse_freqs[4];
+float coarse_freqs[COARSE_NUM];
 
 double lastTime = glfwGetTime();
 int nbFrames = 0;
@@ -89,6 +96,7 @@ enum BackgroundMode{
 VisMode mode = PIXEL;
 BackgroundMode backgroundMode = ARPEGGIO;
 
+float sensitivity = 0.5;
 
 int record(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
            double streamTime, RtAudioStreamStatus status, void *userData) {
@@ -127,8 +135,8 @@ int record(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
     red_freqs[i] /= 2.0;
   }
   
-  int coarse_group = NUM_POINTS / 4;
-  for(int i = 0; i < 4; i++) {
+  int coarse_group = NUM_POINTS / COARSE_NUM;
+  for(int i = 0; i < COARSE_NUM; i++) {
     float last_freq = coarse_freqs[i];
     coarse_freqs[i] = 0;
     for(int j = 0; j < coarse_group; j++) {
@@ -144,7 +152,14 @@ int record(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
 
 void getdevices() {
   // Get the list of device IDs
-  std::vector<unsigned int> ids = adc.getDeviceIds();
+    
+    #ifdef _WIN32
+        std::vector<unsigned int> ids(adc.getDeviceCount());
+        std::iota(ids.begin(), ids.end(), 0);
+    #elif
+        std::vector<unsigned int> ids = adc.getDeviceIds();
+    #endif
+  
   if (ids.size() == 0) {
     std::cout << "No devices found." << std::endl;
     exit(0);
@@ -262,21 +277,21 @@ GLuint loadTexture(const char * imagepath){
 }
 
     // Get the depth buffer value at this pixel.   
-std::vector<std::pair<GLenum, std::string>> specifyShaders(std::string vertex_path, std::string fragment_path) {
+std::vector<std::tuple<GLenum, std::string, std::string>> specifyShaders(std::string vertex_path, std::string fragment_path) {
   std::stringstream vertex;
-  vertex << std::ifstream(vertex_path).rdbuf();
+  vertex << std::ifstream(SHADER_PATH + vertex_path).rdbuf();
   std::stringstream fragment;
-  fragment << std::ifstream(fragment_path).rdbuf();
+  fragment << std::ifstream(SHADER_PATH + fragment_path).rdbuf();
   return {
-      {GL_VERTEX_SHADER, vertex.str()},
-      {GL_FRAGMENT_SHADER, fragment.str()},
+      std::make_tuple(GL_VERTEX_SHADER, vertex.str(), vertex_path),
+      std::make_tuple(GL_FRAGMENT_SHADER, fragment.str(), fragment_path),
   };
 }
 
-bool loadShaders(GLuint *program, std::vector<std::pair<GLenum, std::string>> shaders) {
+bool loadShaders(GLuint *program, std::vector<std::tuple<GLenum, std::string, std::string>> shaders) {
   for (const auto &s : shaders) {
-    GLenum type = s.first;
-    const std::string &source = s.second;
+    GLenum type = std::get<0>(s);
+    const std::string &source = std::get<1>(s);
 
     const GLchar *src = source.c_str();
 
@@ -293,9 +308,9 @@ bool loadShaders(GLuint *program, std::vector<std::pair<GLenum, std::string>> sh
       if (length > 1) {
         std::string log(length, '\0');
         glGetShaderInfoLog(shader, length, &length, &log[0]);
-        printf("Shader compile failed:\n%s\n", log.c_str());
+        printf("Shader (%s) compile failed:\n%s\n", source.c_str(), log.c_str());
       } else {
-        printf("Shader compile failed.\n");
+        printf("Shader (%s) compile failed.\n", source.c_str());
       }
 
       return false;
@@ -316,9 +331,9 @@ bool loadShaders(GLuint *program, std::vector<std::pair<GLenum, std::string>> sh
     if (length > 1) {
       std::string log(length, '\0');
       glGetProgramInfoLog(*program, length, &length, &log[0]);
-      printf("Program link failed:\n%s", log.c_str());
+      printf("Program (%s) link failed:\n%s", std::get<2>(shaders[0]).c_str(), log.c_str());
     } else {
-      printf("Program link failed.\n");
+      printf("Program (%s) link failed.\n", std::get<2>(shaders[0]).c_str());
     }
 
     return false;
@@ -347,36 +362,50 @@ bool Initialize() {
 
   cfg = kiss_fft_alloc(FRAMES, 0, NULL, NULL);
 
-  if (adc.openStream(NULL, &parameters, RTAUDIO_FLOAT32, sampleRate, &bufferFrames, &record)) {
-    std::cout << '\n' << adc.getErrorText() << '\n' << std::endl;
-    exit(0); // problem with device settings
+#ifdef _WIN32
+  bool failure = false;
+  try
+  {
+      adc.openStream(NULL, &parameters, RTAUDIO_FLOAT32, sampleRate, &bufferFrames, &record);
+      adc.startStream();
   }
-
+  catch (const RtAudioError e)
+  {
+      std::cout << '\n' << e.getMessage() << '\n' << std::endl;
+  }
+#elif
+  if (adc.openStream(NULL, &parameters, RTAUDIO_FLOAT32, sampleRate, &bufferFrames, &record)) {
+      std::cout << '\n' << adc.getErrorText() << '\n' << std::endl;
+      exit(0); // problem with device settings
+  }
   // Stream is open ... now start it.
   if (adc.startStream()) {
-    std::cout << adc.getErrorText() << std::endl;
+      std::cout << adc.getErrorText() << std::endl;
   }
+#endif
+
+
 
   // shaders
   printf("Creating programs \n");
   program = glCreateProgram();
-  if (!loadShaders(&program, specifyShaders("../vertex.glsl", "../fragment.glsl"))) {
+  if (!loadShaders(&program, specifyShaders("vertex.glsl", "fragment.glsl"))) {
     return false;
   }
   program2 = glCreateProgram();
-  if (!loadShaders(&program2, specifyShaders("../vertex2.glsl", "../fragment2.glsl"))) {
+  if (!loadShaders(&program2, specifyShaders("vertex2.glsl", "fragment2.glsl"))) {
     return false;
   }
   program3 = glCreateProgram();
-  if (!loadShaders(&program3, specifyShaders("../center_vertex.glsl", "../center_fragment.glsl"))) {
+  if (!loadShaders(&program3, specifyShaders("center_vertex.glsl", "center_fragment.glsl"))) {
     return false;
   }
   program4 = glCreateProgram();
-  if (!loadShaders(&program4, specifyShaders("../background_vertex.glsl", "../background_fragment.glsl"))) {
+  if (!loadShaders(&program4, specifyShaders("background_vertex.glsl", "background_fragment.glsl"))) {
     return false;
   }
   program5 = glCreateProgram();
-  if (!loadShaders(&program5, specifyShaders("../foreground_vertex.glsl", "../foreground_fragment.glsl"))) {
+  if (!loadShaders(&program5, specifyShaders("foreground_vertex.glsl", "foreground_fragment.glsl"))) {
     return false;
   }
   printf("Created programs \n");
@@ -485,7 +514,7 @@ bool Initialize() {
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 
-  float x = 2.0;
+  float x = 4.0;
   GLfloat quads[5*6] = {-x,-x,0.0,0.0,0.0, -x,x,0.0,0.0,1.0, x,x,0.0,1.0,1.0, -x,-x,0.0,0.0,0.0, x,-x,0.0,1.0,0.0, x,x,0.0,1.0,1.0, };
   glBindBuffer(GL_ARRAY_BUFFER, vbo3);
   glBufferData(GL_ARRAY_BUFFER, sizeof(quads), quads, GL_STATIC_DRAW);
@@ -536,7 +565,7 @@ bool Initialize() {
 
   glBindVertexArray(0);
 
-  loadTexture("../dust.png");
+  loadTexture((SHADER_PATH + std::string("dust.png")).c_str());
 
   glUseProgram(0);
 
@@ -576,7 +605,7 @@ void Render() {
 
       float theta_corr = 2.0f * M_PI * float(i + 0.5) / float(NUM_POINTS);
 
-      float sound = coarse_freqs[0] * 0.1 + 1.0;
+      float sound = coarse_freqs[0] * sensitivity * 0.1 + 1.0;
       float inner_radius = radius * sound;
       if (mode == SPECTRUM) {
         sound = red_freqs[i] * 0.5 + 1.0;
@@ -618,12 +647,14 @@ void Render() {
   );
   float time = (double)((double)ms.count() - (double)start.count()) / 1000.0f;
 
+  
+
   //Background
   glUseProgram(program4);
   glBindVertexArray(vao4);
   glUniform1f(glGetUniformLocation(program4, "time"), (float)time);
   glUniform1i(glGetUniformLocation(program4, "mode"), (int)backgroundMode);
-  glUniform1f(glGetUniformLocation(program4, "vol"), (float)coarse_freqs[0] * 0.02);
+  glUniform1f(glGetUniformLocation(program4, "vol"), (float)coarse_freqs[0] * sensitivity * 0.02);
   glDrawArrays(GL_TRIANGLES, 0, 6);
   glBindVertexArray(0);
   glUseProgram(0);
@@ -633,7 +664,7 @@ void Render() {
     glUseProgram(program2);
     glBindVertexArray(vao2);
     glDrawArrays(GL_TRIANGLES, 0, NUM_TRIANGLES * 3);
-    glUniform1f(glGetUniformLocation(program3, "vol"), (float)coarse_freqs[2] * 0.3);
+    glUniform1f(glGetUniformLocation(program2, "vol"), (float)coarse_freqs[COARSE_NUM - 1] * sensitivity * 0.3);
     glBindVertexArray(0);
     glUseProgram(0);
 
@@ -645,7 +676,7 @@ void Render() {
     if (mode == SPECTRUM) {
       glUniform1f(glGetUniformLocation(program3, "vol"), 0.0);
     } else {
-      glUniform1f(glGetUniformLocation(program3, "vol"), (float)coarse_freqs[0] * 0.1);
+      glUniform1f(glGetUniformLocation(program3, "vol"), (float)coarse_freqs[0] * sensitivity * 0.1);
     }
     glBindVertexArray(vao3);
     glDrawArrays(GL_TRIANGLES, 0, 6);
